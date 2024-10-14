@@ -74,3 +74,4 @@ spring.datasource.hikari.max-lifetime=1800000
 ```
 
 ### Note - check the attached test doc api_test_result.doc for testing result of above restful endpoint.
+
