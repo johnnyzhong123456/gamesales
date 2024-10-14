@@ -1,5 +1,4 @@
 # gamesales
 
 
-![Uploading image.png…]()
 
