@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.johnny.gamesales.DTO.SalesSummary;
+import com.johnny.gamesales.dto.SalesSummary;
 import com.johnny.gamesales.entity.GameSale;
 import com.johnny.gamesales.service.GameSaleService;
 
@@ -37,22 +37,20 @@ public class GameSaleController {
 
 	@PostMapping("/import")
 	public ResponseEntity<String> importGameSales(@RequestParam("file") MultipartFile file) {
-		try {
-			logger.debug("filename: "+file.getName());
-			if (file.isEmpty()) {
-				logger.warn("The file is empty");
-				return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("File is empty");
-			} 
-			boolean isImportSuccess = gameSaleService.importGameSales(file.getInputStream());
-			if (!isImportSuccess) {
-				return ResponseEntity.ok("Import Failed.");
-			}
-			logger.info("Import successfully.");
-			return ResponseEntity.ok("Import successfully.");
-		} catch (IOException e) {
-			logger.error("Error processing file: ", e);
-			return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Error processing the file");
-		}
+				try {
+					if (file.isEmpty()) {
+						logger.warn("The file is empty");
+						return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("File is empty");
+					} 
+					boolean isImportSuccess  = gameSaleService.importGameSales(file.getInputStream(),file.getOriginalFilename());
+					if (!isImportSuccess) {
+						return ResponseEntity.ok("Import Failed.");
+					}
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				
+			  return ResponseEntity.ok("Import successfully.");
 	}
 
 	@GetMapping("/getGameSales")

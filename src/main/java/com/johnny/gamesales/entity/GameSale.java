@@ -13,15 +13,10 @@ import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(
-	    name = "game_sales", // Specify your table name here
-	    indexes = {
-	        @Index(name = "idx_sale_date", columnList = "dateOfSale"),
-	        @Index(name = "idx_sale_price", columnList = "salePrice"),
-	        @Index(name = "idx_date_game", columnList = "dateOfSale, gameNo")
-	    }
-	)
-public class GameSale implements Serializable{
+@Table(name = "game_sales", // Specify your table name here
+		indexes = { @Index(name = "idx_sale_date", columnList = "dateOfSale"),
+				@Index(name = "idx_sale_price", columnList = "salePrice")})
+public class GameSale implements Serializable {
 
 	/**
 	 * 
@@ -46,17 +41,15 @@ public class GameSale implements Serializable{
 
 	@Column(nullable = true)
 	private BigDecimal costPrice;
-	
+
 	@Column(nullable = false)
-	private BigDecimal tax; 
+	private BigDecimal tax;
 
 	@Column(nullable = true)
 	private BigDecimal salePrice;
 
 	@Column(nullable = false)
 	private Timestamp dateOfSale;
-	
-	
 
 	public GameSale() {
 		super();
@@ -146,6 +139,5 @@ public class GameSale implements Serializable{
 	public void setTax(BigDecimal tax) {
 		this.tax = tax;
 	}
-	
 
 }

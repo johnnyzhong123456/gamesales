@@ -1,9 +1,14 @@
-package com.johnny.gamesales.DTO;
+package com.johnny.gamesales.dto;
 
+import java.io.Serializable;
 import java.math.BigDecimal;
 
-public class SalesSummary {
+public class SalesSummary implements Serializable{
 
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
 	private int totalGamesSold;
 	private BigDecimal totalSales;
 	private String gameNo;

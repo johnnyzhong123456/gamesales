@@ -12,6 +12,29 @@ create table game_sales (
     PRIMARY KEY (id)
 );
 
+CREATE TABLE csv_import_log (
+    import_id INT NOT NULL AUTO_INCREMENT,
+    import_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    file_name VARCHAR(255) NOT NULL,
+    total_records INT NOT NULL,
+    successful_imports INT NOT NULL,
+    failed_imports INT NOT NULL,
+    status ENUM('Pending', 'In Progress', 'Completed', 'Failed') NOT NULL,
+    PRIMARY KEY (import_id)
+);
+
+
+
+CREATE TABLE csv_import_errors (
+    error_id INT NOT NULL AUTO_INCREMENT,
+    import_id INT NOT NULL,
+    game_no INT,
+    error_message TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (error_id),
+    FOREIGN KEY (import_id) REFERENCES csv_import_log(import_id) 	
+);
+
 CREATE INDEX idx_sale_date ON game_sales (date_of_sale);
 CREATE INDEX idx_sale_price ON game_sales (sale_price);
 CREATE INDEX idx_date_game ON game_sales (date_of_sale, game_no);

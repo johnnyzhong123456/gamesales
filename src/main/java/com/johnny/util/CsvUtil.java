@@ -26,7 +26,7 @@ public class CsvUtil {
 
 	                // Random date between 1 April and 30 April
 	                int day = random.nextInt(30) + 1;
-	                Timestamp dateOfSale = Timestamp.valueOf(String.format("2023-04-%02d 12:00:00", day));
+	                Timestamp dateOfSale = Timestamp.valueOf(String.format("2024-04-%02d 12:00:00", day));
 
 	                // Write to CSV
 	                writer.write(String.format("%d,%s,%s,%d,%.2f,%.2f,%s\n",

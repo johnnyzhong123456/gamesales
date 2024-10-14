@@ -27,28 +27,57 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
-import com.johnny.gamesales.DTO.SalesSummary;
-import com.johnny.gamesales.DTO.TotalSalesDTO;
+import com.johnny.gamesales.dto.SalesSummary;
+import com.johnny.gamesales.dto.TotalSalesDTO;
+import com.johnny.gamesales.entity.CsvImportError;
+import com.johnny.gamesales.entity.CsvImportLog;
 import com.johnny.gamesales.entity.GameSale;
+import com.johnny.gamesales.repository.CsvImportErrorRepository;
+import com.johnny.gamesales.repository.CsvImportLogRepository;
 import com.johnny.gamesales.repository.GameSaleRepository;
 
 @Service
 public class GameSaleService {
 	
 	private static final Logger logger = LoggerFactory.getLogger(GameSaleService.class);
+	private static final int BATCH_SIZE = 3000;
+	private static final int THREAD_COUNT = 50;
+	
 	
 	@Autowired
 	private GameSaleRepository gameSaleRepository;
+	
+	@Autowired
+	private CsvImportLogRepository  csvImportLogRepository;
+	
+	@Autowired
+	private CsvImportErrorRepository csvImportErrorRepository;
 
-	private static final int BATCH_SIZE = 3000;
-	private static final int THREAD_COUNT = 50;
+	
 
 	@Autowired
 	private DataSource dataSource;
 	
-	public boolean importGameSales(InputStream fileInputStream) {
-		List<String> errors = new ArrayList<String>();
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(fileInputStream))) {
+	/**
+	 *  Performance tuned 
+	 *  1.Asynchronous Processing , executors.thread pool
+	 *  2.JDBC bulk insert and disable auto-commit
+	 *  3.connection pooling - HikariCP
+	 */
+	
+	public boolean importGameSales(InputStream inputStream,String fileName) {
+		
+	    CsvImportLog importLog = new CsvImportLog();
+        importLog.setFileName(fileName);
+        importLog.setStatus(CsvImportLog.Status.IN_PROGRESS);
+        importLog.setImportDate(new Timestamp(System.currentTimeMillis()));
+        
+        List<CsvImportError> errorList = new ArrayList<>();
+        int totalRecords = 0;
+        int successfulImports = 0;
+		
+		
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
 			String line;
 			List<GameSale> gameSalesBatch = new ArrayList<>();
 			reader.readLine(); // Skip header
@@ -56,8 +85,10 @@ public class GameSaleService {
 			List<Future<Void>> futures = new ArrayList<>();
 
 			while ((line = reader.readLine()) != null) {
+				String[] fields = null;
+				totalRecords++;
 				try {
-					String[] fields = line.split(",");
+					fields = line.split(",");
 					GameSale gameSale = new GameSale();
 					gameSale.setGameNo(Integer.parseInt(fields[0]));
 					gameSale.setGameName(fields[1]);
@@ -76,15 +107,29 @@ public class GameSaleService {
 							saveBatchToDatabase(batchToInsert);
 							return null;
 						}));
+						successfulImports+=BATCH_SIZE;
 						gameSalesBatch.clear();
 					}
 				} catch (Exception e) {
 					logger.error("Error processing line: " + line + " - " + e.getMessage());
-					errors.add("Error processing record: " + String.join(", ", line) + " - " + e.getMessage());
+                    errorList.add(new CsvImportError(null, Integer.valueOf(fields[0]), e.getMessage()));
+                    importLog.setTotalRecords(totalRecords);
+        	        importLog.setSuccessfulImports(successfulImports);
+        	        importLog.setFailedImports(errorList.size());
+        	        importLog.setStatus(errorList.isEmpty() ? CsvImportLog.Status.COMPLETED : CsvImportLog.Status.FAILED);
+        	        csvImportLogRepository.save(importLog);
+        	        if (!errorList.isEmpty()) {
+        	            for (CsvImportError error : errorList) {
+        	                error.setImportLog(importLog); // Associate error with the import log
+        	            }
+        	            csvImportErrorRepository.saveAll(errorList);
+        	            return false;
+        	        }
 				}
 			}
 			// Save any remaining records
 			if (!gameSalesBatch.isEmpty()) {
+				successfulImports+=gameSalesBatch.size();
 				futures.add(executor.submit(() -> {
 					saveBatchToDatabase(new ArrayList<>(gameSalesBatch));
 					return null;
@@ -103,21 +148,20 @@ public class GameSaleService {
 				Thread.currentThread().interrupt();
 			}
 			
-			if (errors.size() > 0) {
-				return false;
-			}
-			
+		      // Finalize the import log entry
+	        importLog.setTotalRecords(totalRecords);
+	        importLog.setSuccessfulImports(successfulImports);
+	        importLog.setFailedImports(errorList.size());
+	        importLog.setStatus(errorList.isEmpty() ? CsvImportLog.Status.COMPLETED : CsvImportLog.Status.FAILED);
+	        csvImportLogRepository.save(importLog);
 		} catch (IOException e) {
 			logger.error("Error occurred: " + e.getMessage());
-			errors.add("Error processing record: "  + e.getMessage());
-
 		}
 		return true;
 	}
 
     // bulk insert & disable auto commit to improve performance
 	private void saveBatchToDatabase(List<GameSale> batchToInsert) {
-		System.out.println("Hello . johnny i am here common!");
 		try (Connection connection = dataSource.getConnection()) {
 			connection.setAutoCommit(false); // Disable auto-commit for better performance
 			StringBuilder sqlBuilder = new StringBuilder(
@@ -152,7 +196,12 @@ public class GameSaleService {
 			logger.error("Error getting connection: " + e.getMessage());
 		}
 	}
-
+    /*
+     * performance - query api 
+     * 1. add index for dateOfSale & saleprice
+     * 2. add caching ( redis & in-memory caching ConcurrentMapCache )
+     * 3. Query Optimization (not select * , ... )
+     */
 	 // Method to get all game sales with caching
     @Cacheable(value = "gameSales", key = "'all-' + #pageable.pageNumber")
 	public Page<GameSale> getAllGameSales(Pageable pageable) {

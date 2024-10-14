@@ -10,7 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import com.johnny.gamesales.DTO.TotalSalesDTO;
+import com.johnny.gamesales.dto.TotalSalesDTO;
 import com.johnny.gamesales.entity.GameSale;
 
 public interface GameSaleRepository extends JpaRepository<GameSale, Long> {
@@ -22,7 +22,7 @@ public interface GameSaleRepository extends JpaRepository<GameSale, Long> {
 
 	Page<GameSale> findBySalePriceGreaterThan(BigDecimal price, Pageable pageable);
 
-	@Query("SELECT new com.johnny.gamesales.DTO.TotalSalesDTO(SUM(g.salePrice), COUNT(g.id)) "
+	@Query("SELECT new com.johnny.gamesales.dto.TotalSalesDTO(SUM(g.salePrice), COUNT(g.id)) "
 	         + "FROM GameSale g "
 	         + "WHERE g.dateOfSale BETWEEN :fromDate AND :toDate")
 	    TotalSalesDTO findTotalSales(@Param("fromDate") LocalDateTime fromDate, @Param("toDate") LocalDateTime toDate);
