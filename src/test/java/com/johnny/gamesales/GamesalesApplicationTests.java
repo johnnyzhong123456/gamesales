@@ -17,7 +17,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.johnny.gamesales.controller.GameSaleController;
-import com.johnny.gamesales.service.GameSaleService;
+import com.johnny.gamesales.service.GameSaleServiceImpl;
 import com.johnny.util.CsvUtil;
 
 @SpringBootTest
@@ -35,7 +35,7 @@ class GamesalesApplicationTests {
 	}
 
 	@Mock
-	private GameSaleService gameSaleService;
+	private GameSaleServiceImpl gameSaleService;
 
 	@InjectMocks
 	private GameSaleController gameSaleController;

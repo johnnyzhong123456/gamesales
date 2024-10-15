@@ -24,7 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import com.johnny.gamesales.dto.SalesSummary;
 import com.johnny.gamesales.entity.GameSale;
-import com.johnny.gamesales.service.GameSaleService;
+import com.johnny.gamesales.service.GameSaleServiceImpl;
 
 @RestController
 @RequestMapping("/api")
@@ -33,7 +33,7 @@ public class GameSaleController {
 	private static final Logger logger = LoggerFactory.getLogger(GameSaleController.class);
 
 	@Autowired
-	private GameSaleService gameSaleService;
+	private GameSaleServiceImpl gameSaleService;
 
 	@PostMapping("/import")
 	public ResponseEntity<String> importGameSales(@RequestParam("file") MultipartFile file) {
