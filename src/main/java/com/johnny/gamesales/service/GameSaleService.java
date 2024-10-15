@@ -26,6 +26,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.johnny.gamesales.dto.SalesSummary;
 import com.johnny.gamesales.dto.TotalSalesDTO;
@@ -36,48 +37,44 @@ import com.johnny.gamesales.repository.CsvImportErrorRepository;
 import com.johnny.gamesales.repository.CsvImportLogRepository;
 import com.johnny.gamesales.repository.GameSaleRepository;
 
+import jakarta.persistence.Index;
+
 @Service
 public class GameSaleService {
-	
+
 	private static final Logger logger = LoggerFactory.getLogger(GameSaleService.class);
 	private static final int BATCH_SIZE = 3000;
-	private static final int THREAD_COUNT = 50;
-	
-	
+	private static final int THREAD_COUNT = 30;
+
 	@Autowired
 	private GameSaleRepository gameSaleRepository;
-	
+
 	@Autowired
-	private CsvImportLogRepository  csvImportLogRepository;
-	
+	private CsvImportLogRepository csvImportLogRepository;
+
 	@Autowired
 	private CsvImportErrorRepository csvImportErrorRepository;
 
-	
-
 	@Autowired
 	private DataSource dataSource;
-	
+
 	/**
-	 *  Performance tuned 
-	 *  1.Asynchronous Processing , executors.thread pool
-	 *  2.JDBC bulk insert and disable auto-commit
-	 *  3.connection pooling - HikariCP
+	 * Performance tuned 1.Asynchronous Processing , executors.thread pool 2.JDBC
+	 * bulk insert and disable auto-commit 3.connection pooling - HikariCP
 	 */
-	
-	public boolean importGameSales(InputStream inputStream,String fileName) {
-		
-	    CsvImportLog importLog = new CsvImportLog();
-        importLog.setFileName(fileName);
-        importLog.setStatus(CsvImportLog.Status.IN_PROGRESS);
-        importLog.setImportDate(new Timestamp(System.currentTimeMillis()));
-        
-        List<CsvImportError> errorList = new ArrayList<>();
-        int totalRecords = 0;
-        int successfulImports = 0;
-		
-		
-		try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
+
+	public boolean importGameSales(MultipartFile file) {
+		dropIndex();
+		CsvImportLog importLog = new CsvImportLog();
+		importLog.setFileName(file.getOriginalFilename());
+		importLog.setStatus(CsvImportLog.Status.IN_PROGRESS);
+		importLog.setImportDate(new Timestamp(System.currentTimeMillis()));
+
+		List<CsvImportError> errorList = new ArrayList<>();
+		int totalRecords = 0;
+		int successfulImports = 0;
+
+		try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
 			String line;
 			List<GameSale> gameSalesBatch = new ArrayList<>();
 			reader.readLine(); // Skip header
@@ -107,29 +104,30 @@ public class GameSaleService {
 							saveBatchToDatabase(batchToInsert);
 							return null;
 						}));
-						successfulImports+=BATCH_SIZE;
+						successfulImports += BATCH_SIZE;
 						gameSalesBatch.clear();
 					}
 				} catch (Exception e) {
 					logger.error("Error processing line: " + line + " - " + e.getMessage());
-                    errorList.add(new CsvImportError(null, Integer.valueOf(fields[0]), e.getMessage()));
-                    importLog.setTotalRecords(totalRecords);
-        	        importLog.setSuccessfulImports(successfulImports);
-        	        importLog.setFailedImports(errorList.size());
-        	        importLog.setStatus(errorList.isEmpty() ? CsvImportLog.Status.COMPLETED : CsvImportLog.Status.FAILED);
-        	        csvImportLogRepository.save(importLog);
-        	        if (!errorList.isEmpty()) {
-        	            for (CsvImportError error : errorList) {
-        	                error.setImportLog(importLog); // Associate error with the import log
-        	            }
-        	            csvImportErrorRepository.saveAll(errorList);
-        	            return false;
-        	        }
+					errorList.add(new CsvImportError(null, Integer.valueOf(fields[0]), e.getMessage()));
+					importLog.setTotalRecords(totalRecords);
+					importLog.setSuccessfulImports(successfulImports);
+					importLog.setFailedImports(errorList.size());
+					importLog.setStatus(
+							errorList.isEmpty() ? CsvImportLog.Status.COMPLETED : CsvImportLog.Status.FAILED);
+					csvImportLogRepository.save(importLog);
+					if (!errorList.isEmpty()) {
+						for (CsvImportError error : errorList) {
+							error.setImportLog(importLog); // Associate error with the import log
+						}
+						csvImportErrorRepository.saveAll(errorList);
+						return false;
+					}
 				}
 			}
 			// Save any remaining records
 			if (!gameSalesBatch.isEmpty()) {
-				successfulImports+=gameSalesBatch.size();
+				successfulImports += gameSalesBatch.size();
 				futures.add(executor.submit(() -> {
 					saveBatchToDatabase(new ArrayList<>(gameSalesBatch));
 					return null;
@@ -139,7 +137,7 @@ public class GameSaleService {
 			// gracefully shutdown
 			executor.shutdown();
 			try {
-				//force to shutdown if waiting 1 hours
+				// force to shutdown if waiting 1 hours
 				if (!executor.awaitTermination(1, TimeUnit.HOURS)) {
 					executor.shutdownNow();
 				}
@@ -147,20 +145,52 @@ public class GameSaleService {
 				executor.shutdownNow();
 				Thread.currentThread().interrupt();
 			}
-			
-		      // Finalize the import log entry
-	        importLog.setTotalRecords(totalRecords);
-	        importLog.setSuccessfulImports(successfulImports);
-	        importLog.setFailedImports(errorList.size());
-	        importLog.setStatus(errorList.isEmpty() ? CsvImportLog.Status.COMPLETED : CsvImportLog.Status.FAILED);
-	        csvImportLogRepository.save(importLog);
+
+			// Finalize the import log entry
+			importLog.setTotalRecords(totalRecords);
+			importLog.setSuccessfulImports(successfulImports);
+			importLog.setFailedImports(errorList.size());
+			importLog.setStatus(errorList.isEmpty() ? CsvImportLog.Status.COMPLETED : CsvImportLog.Status.FAILED);
+			csvImportLogRepository.save(importLog);
 		} catch (IOException e) {
 			logger.error("Error occurred: " + e.getMessage());
+		} finally {
+			createIndex();
 		}
 		return true;
 	}
 
-    // bulk insert & disable auto commit to improve performance
+//	 @Index(name = "idx_sale_date", columnList = "dateOfSale"),
+//     @Index(name = "idx_sale_price", columnList = "salePrice"),
+//     @Index(name = "idx_date_game", columnList = "dateOfSale, gameNo")
+
+	private void dropIndex() {
+		try (Connection connection = dataSource.getConnection()) {
+			logger.info("Drop index idx_sale_date, idx_sale_price ,  idx_date_game");
+			String dropIndexSQL = "ALTER TABLE game_sales DROP INDEX idx_sale_date, "
+					+ "DROP INDEX idx_sale_price,DROP INDEX idx_date_game";
+			try (PreparedStatement dropIndexStmt = connection.prepareStatement(dropIndexSQL)) {
+				dropIndexStmt.execute();
+			}
+		} catch (SQLException e) {
+			 logger.info("Drop index ERROR: " + e.getMessage());
+		}
+	}
+	
+	private void createIndex() {
+        try (Connection connection = dataSource.getConnection()) {
+        	logger.info("Create index idx_sale_date, idx_sale_price ,  idx_date_game");
+        	String createIndexSQL = "ALTER TABLE game_sales ADD INDEX idx_sale_date(date_of_sale), "
+					+ "ADD INDEX idx_sale_price(sale_price),ADD INDEX idx_date_game(date_of_sale, game_no)";
+        	try(PreparedStatement createIndexStmt = connection.prepareStatement(createIndexSQL)) {
+        		createIndexStmt.execute();
+        	}
+        } catch (SQLException e) {
+        	logger.error("Create index Error : " + e.getMessage());
+		}
+	}
+
+	// bulk insert & disable auto commit to improve performance
 	private void saveBatchToDatabase(List<GameSale> batchToInsert) {
 		try (Connection connection = dataSource.getConnection()) {
 			connection.setAutoCommit(false); // Disable auto-commit for better performance
@@ -187,7 +217,7 @@ public class GameSaleService {
 				ps.executeUpdate();
 				connection.commit(); // Commit transaction
 				logger.debug("Saved batch of size: " + batchToInsert.size());
-				
+
 			} catch (SQLException e) {
 				connection.rollback(); // Rollback on error
 				logger.error("roll back the transaction: " + e.getMessage());
@@ -196,49 +226,49 @@ public class GameSaleService {
 			logger.error("Error getting connection: " + e.getMessage());
 		}
 	}
-    /*
-     * performance - query api 
-     * 1. add index for dateOfSale & saleprice
-     * 2. add caching ( redis & in-memory caching ConcurrentMapCache )
-     * 3. Query Optimization (not select * , ... )
-     */
-	 // Method to get all game sales with caching
-    @Cacheable(value = "gameSales", key = "'all-' + #pageable.pageNumber")
+
+	/*
+	 * performance - query api 1. add index for dateOfSale & saleprice 2. add
+	 * caching ( redis & in-memory caching ConcurrentMapCache ) 3. Query
+	 * Optimization (not select * , ... )
+	 */
+	// Method to get all game sales with caching
+	@Cacheable(value = "gameSales", key = "'all-' + #pageable.pageNumber")
 	public Page<GameSale> getAllGameSales(Pageable pageable) {
 		return gameSaleRepository.findAll(pageable);
 	}
-    // Method to get game sales by date range with caching
-    @Cacheable(value = "gameSalesByDate", key = "'dateRange-' + #fromDate + '-' + #toDate + '-' + #pageable.pageNumber")
-    public Page<GameSale> getGameSalesByDateRange(Timestamp fromDate, Timestamp toDate, Pageable pageable) {
-        return gameSaleRepository.findByDateOfSaleBetween(fromDate, toDate, pageable);
-    }
 
-    // Method to get game sales by price less than a specified amount with caching
-    @Cacheable(value = "gameSalesByPrice", key = "'less-' + #price + '-' + #pageable.pageNumber")
-    public Page<GameSale> getGameSalesByPriceLessThan(BigDecimal price, Pageable pageable) {
-        return gameSaleRepository.findBySalePriceLessThan(price, pageable);
-    }
+	// Method to get game sales by date range with caching
+	@Cacheable(value = "gameSalesByDate", key = "'dateRange-' + #fromDate + '-' + #toDate + '-' + #pageable.pageNumber")
+	public Page<GameSale> getGameSalesByDateRange(Timestamp fromDate, Timestamp toDate, Pageable pageable) {
+		return gameSaleRepository.findByDateOfSaleBetween(fromDate, toDate, pageable);
+	}
 
-    // Method to get game sales by price greater than a specified amount with caching
-    @Cacheable(value = "gameSalesByPrice", key = "'greater-' + #price + '-' + #pageable.pageNumber")
-    public Page<GameSale> getGameSalesByPriceGreaterThan(BigDecimal price, Pageable pageable) {
-        return gameSaleRepository.findBySalePriceGreaterThan(price, pageable);
-    }
-    
-    @Cacheable(value = "totalSalesCache", key = "#fromDate.toString() + '-' + #toDate.toString() + '-' + (#gameNo != null ? #gameNo : 'all')")
-    public SalesSummary getTotalSales(LocalDateTime fromDate, LocalDateTime toDate, Integer gameNo) {
-        TotalSalesDTO totalSalesData = gameSaleRepository.findTotalSales(fromDate, toDate);
-        BigDecimal totalSales = totalSalesData.getTotalSalesPrice() != null ? totalSalesData.getTotalSalesPrice() : BigDecimal.ZERO;
-        Long totalGamesSold = totalSalesData.getTotalGamesSold() != null ? totalSalesData.getTotalGamesSold() : 0L;
-        BigDecimal totalSalesByGame = BigDecimal.ZERO;
-        if (gameNo != null) {
-            totalSalesByGame = gameSaleRepository.findTotalSalesByGame(fromDate, toDate, gameNo);
-        }
-        return new SalesSummary(totalGamesSold.intValue(), totalSales, gameNo != null ? gameNo.toString() : null, totalSalesByGame);
-    }
-    
-    
-    
- 
-    
+	// Method to get game sales by price less than a specified amount with caching
+	@Cacheable(value = "gameSalesByPrice", key = "'less-' + #price + '-' + #pageable.pageNumber")
+	public Page<GameSale> getGameSalesByPriceLessThan(BigDecimal price, Pageable pageable) {
+		return gameSaleRepository.findBySalePriceLessThan(price, pageable);
+	}
+
+	// Method to get game sales by price greater than a specified amount with
+	// caching
+	@Cacheable(value = "gameSalesByPrice", key = "'greater-' + #price + '-' + #pageable.pageNumber")
+	public Page<GameSale> getGameSalesByPriceGreaterThan(BigDecimal price, Pageable pageable) {
+		return gameSaleRepository.findBySalePriceGreaterThan(price, pageable);
+	}
+
+	@Cacheable(value = "totalSalesCache", key = "#fromDate.toString() + '-' + #toDate.toString() + '-' + (#gameNo != null ? #gameNo : 'all')")
+	public SalesSummary getTotalSales(LocalDateTime fromDate, LocalDateTime toDate, Integer gameNo) {
+		TotalSalesDTO totalSalesData = gameSaleRepository.findTotalSales(fromDate, toDate);
+		BigDecimal totalSales = totalSalesData.getTotalSalesPrice() != null ? totalSalesData.getTotalSalesPrice()
+				: BigDecimal.ZERO;
+		Long totalGamesSold = totalSalesData.getTotalGamesSold() != null ? totalSalesData.getTotalGamesSold() : 0L;
+		BigDecimal totalSalesByGame = BigDecimal.ZERO;
+		if (gameNo != null) {
+			totalSalesByGame = gameSaleRepository.findTotalSalesByGame(fromDate, toDate, gameNo);
+		}
+		return new SalesSummary(totalGamesSold.intValue(), totalSales, gameNo != null ? gameNo.toString() : null,
+				totalSalesByGame);
+	}
+
 }

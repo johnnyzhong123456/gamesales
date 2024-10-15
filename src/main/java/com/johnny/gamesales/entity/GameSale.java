@@ -14,8 +14,11 @@ import jakarta.persistence.Table;
 
 @Entity
 @Table(name = "game_sales", // Specify your table name here
-		indexes = { @Index(name = "idx_sale_date", columnList = "dateOfSale"),
-				@Index(name = "idx_sale_price", columnList = "salePrice")})
+indexes = {
+        @Index(name = "idx_sale_date", columnList = "dateOfSale"),
+        @Index(name = "idx_sale_price", columnList = "salePrice"),
+        @Index(name = "idx_date_game", columnList = "dateOfSale, gameNo")
+    })
 public class GameSale implements Serializable {
 
 	/**

@@ -37,20 +37,15 @@ public class GameSaleController {
 
 	@PostMapping("/import")
 	public ResponseEntity<String> importGameSales(@RequestParam("file") MultipartFile file) {
-				try {
-					if (file.isEmpty()) {
-						logger.warn("The file is empty");
-						return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("File is empty");
-					} 
-					boolean isImportSuccess  = gameSaleService.importGameSales(file.getInputStream(),file.getOriginalFilename());
-					if (!isImportSuccess) {
-						return ResponseEntity.ok("Import Failed.");
-					}
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-				
-			  return ResponseEntity.ok("Import successfully.");
+		if (file.isEmpty()) {
+			logger.warn("The file is empty");
+			return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("File is empty");
+		}
+		boolean isImportSuccess = gameSaleService.importGameSales(file);
+		if (!isImportSuccess) {
+			return ResponseEntity.ok("Import Failed.");
+		}
+		return ResponseEntity.ok("Import successfully.");
 	}
 
 	@GetMapping("/getGameSales")

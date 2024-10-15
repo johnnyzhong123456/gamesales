@@ -24,12 +24,11 @@ import com.johnny.util.CsvUtil;
 @AutoConfigureMockMvc
 class GamesalesApplicationTests {
 
-	private static final String CSV_FILE_NAME = "game_sales1.csv";
+	private static final String CSV_FILE_NAME = "game_sales.csv";
 
 	@Autowired
 	private MockMvc mockMvc;
 
-	// Generate the csv
 	@Test
 	void genearteCSV() throws IOException {
 		CsvUtil.generateCsv(CSV_FILE_NAME, 1000000);
